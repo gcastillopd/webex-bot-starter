@@ -87,6 +87,12 @@ framework.on("log", (msg) => {
 /* On mention with command
 ex User enters @botname framework, the bot will write back in markdown
 */
+
+framework.hears("hola", (bot, trigger) => {
+  console.log("hola command received");
+  bot.say("Hello ${trigger.person.displayName}.")
+});
+
 framework.hears(
   "framework",
   (bot) => {
