@@ -90,7 +90,8 @@ ex User enters @botname framework, the bot will write back in markdown
 
 framework.hears("hola", (bot, trigger) => {
   console.log("hola command received");
-  bot.say("Hello ${trigger.person.displayName}.")
+  let personName = trigger.person.displayName;
+  bot.say(`Hola ${personName}.`);
 });
 
 framework.hears(
@@ -224,7 +225,7 @@ let cardJSON = {
 /* On mention with card example
 ex User enters @botname 'card me' phrase, the bot will produce a personalized card - https://developer.webex.com/docs/api/guides/cards
 */
-framework.hears(
+/*framework.hears(
   "card me",
   (bot, trigger) => {
     console.log("someone asked for a card");
@@ -242,7 +243,258 @@ framework.hears(
   },
   "**card me**: (a cool card!)",
   0
-);
+);*/
+
+ framework.hears('card please', (bot, trigger) => {
+ bot.sendCard(
+  {
+    "type": "AdaptiveCard",
+    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+    "version": "1.3",
+    "body": [
+        {
+            "type": "ColumnSet",
+            "columns": [
+                {
+                    "type": "Column",
+                    "width": "stretch",
+                    "items": [
+                        {
+                            "type": "TextBlock",
+                            "text": "Incident",
+                            "wrap": true,
+                            "weight": "Bolder",
+                            "color": "Good"
+                        }
+                    ]
+                },
+                {
+                    "type": "Column",
+                    "width": "stretch",
+                    "items": [
+                        {
+                            "type": "TextBlock",
+                            "text": "#000001",
+                            "wrap": true,
+                            "weight": "Bolder",
+                            "color": "Good",
+                            "isSubtle": true
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "ColumnSet",
+            "columns": [
+                {
+                    "type": "Column",
+                    "width": "stretch",
+                    "items": [
+                        {
+                            "type": "TextBlock",
+                            "text": "Service",
+                            "wrap": true
+                        }
+                    ]
+                },
+                {
+                    "type": "Column",
+                    "width": "stretch",
+                    "items": [
+                        {
+                            "type": "TextBlock",
+                            "text": "Test Service\n",
+                            "wrap": true,
+                            "color": "Good",
+                            "isSubtle": true
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "ColumnSet",
+            "columns": [
+                {
+                    "type": "Column",
+                    "width": "stretch",
+                    "items": [
+                        {
+                            "type": "TextBlock",
+                            "text": "Triggered By",
+                            "wrap": true
+                        }
+                    ]
+                },
+                {
+                    "type": "Column",
+                    "width": "stretch",
+                    "items": [
+                        {
+                            "type": "TextBlock",
+                            "text": "User1",
+                            "wrap": true,
+                            "color": "Good",
+                            "isSubtle": true
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "ColumnSet",
+            "columns": [
+                {
+                    "type": "Column",
+                    "width": "stretch",
+                    "items": [
+                        {
+                            "type": "TextBlock",
+                            "text": "Assign To",
+                            "wrap": true
+                        }
+                    ]
+                },
+                {
+                    "type": "Column",
+                    "width": "stretch",
+                    "items": [
+                        {
+                            "type": "TextBlock",
+                            "text": "GCP",
+                            "wrap": true,
+                            "color": "Good",
+                            "isSubtle": true
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "ColumnSet",
+            "columns": [
+                {
+                    "type": "Column",
+                    "width": "stretch",
+                    "items": [
+                        {
+                            "type": "TextBlock",
+                            "text": "Urgency",
+                            "wrap": true
+                        }
+                    ]
+                },
+                {
+                    "type": "Column",
+                    "width": "stretch",
+                    "items": [
+                        {
+                            "type": "TextBlock",
+                            "text": "Low",
+                            "wrap": true,
+                            "color": "Good"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "ColumnSet",
+            "columns": [
+                {
+                    "type": "Column",
+                    "width": "stretch",
+                    "items": [
+                        {
+                            "type": "TextBlock",
+                            "text": "Priority",
+                            "wrap": true
+                        }
+                    ]
+                },
+                {
+                    "type": "Column",
+                    "width": "stretch",
+                    "items": [
+                        {
+                            "type": "TextBlock",
+                            "text": "P4",
+                            "wrap": true,
+                            "color": "Good"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "Container",
+            "items": [
+                {
+                    "type": "TextBlock",
+                    "text": "Incident Actions",
+                    "wrap": true
+                },
+                {
+                    "type": "ActionSet",
+                    "actions": [
+                        {
+                            "type": "Action.OpenUrl",
+                            "title": "Acknowledge",
+                            "url": "https://www.no.com"
+                        },
+                        {
+                            "type": "Action.OpenUrl",
+                            "title": "Resolve",
+                            "url": "https://www.no.com"
+                        },
+                        {
+                            "type": "Action.ToggleVisibility",
+                            "title": "Add Notes",
+                            "targetElements": [
+                                "Notes_Container"
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "Container",
+            "items": [
+                {
+                    "type": "TextBlock",
+                    "text": "Add Notes",
+                    "wrap": true
+                },
+                {
+                    "type": "Input.Text",
+                    "placeholder": "Add Notes",
+                    "id": "Add_Notes",
+                    "isMultiline": true
+                },
+                {
+                    "type": "ActionSet",
+                    "actions": [
+                        {
+                            "type": "Action.Submit",
+                            "title": "Submit"
+                        },
+                        {
+                            "type": "Action.OpenUrl",
+                            "title": "Agregar",
+                            "url": "https://www.noi.com"
+                        }
+                    ]
+                }
+            ],
+            "id": "Notes_Container",
+            "isVisible": false
+        }
+    ]
+  },
+   "This is the fallback text if the client can't render this card");
+ }, '**card please** - ask the bot to post a card to the space');
 
 /* On mention reply example
 ex User enters @botname 'reply' phrase, the bot will post a threaded reply

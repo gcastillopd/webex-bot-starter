@@ -1,5 +1,5 @@
 {
-  "name": "Webex-Bot-Starter",
+  "name": "webex-bot-starter",
   "version": "1.0.0",
   "description": "Starter template for creating a Webex Teams bot",
   "main": "index.js",
