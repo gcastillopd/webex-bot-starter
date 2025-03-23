@@ -8,6 +8,62 @@ var app = express();
 app.use(bodyParser.json());
 app.use(express.static("images"));
 
+
+// Handler for card submissions
+framework.on('attachmentAction', async (bot, trigger) => {
+    try {
+        // Get the submitted data
+        const inputs = trigger.attachmentAction.inputs;
+        
+        // Check if this is an acknowledge action
+        if (inputs.action === 'acknowledge') {
+            // Get user information
+            const personId = trigger.attachmentAction.personId;
+            const roomId = trigger.attachmentAction.roomId;
+            
+            // Get detailed user information
+            const userInfo = await bot.webex.people.get(personId);
+            
+            // Create user data object
+            const userData = {
+                id: personId,
+                email: userInfo.emails[0],
+                name: userInfo.displayName,
+                timestamp: inputs.timestamp,
+                roomId: roomId
+            };
+            
+            // Log the acknowledgment
+            await logAcknowledgment(userData);
+            
+            // Send confirmation
+            await bot.say(`Acknowledgment received from ${userData.name} at ${userData.timestamp}`);
+        }
+        
+    } catch (error) {
+        console.error('Error processing acknowledgment:', error);
+        bot.say('Sorry, there was an error processing your acknowledgment.');
+    }
+});
+
+async function logAcknowledgment(userData) {
+    // Example logging to database (using MongoDB)
+    try {
+        await db.collection('acknowledgments').insertOne({
+            userId: userData.id,
+            userName: userData.name,
+            userEmail: userData.email,
+            timestamp: new Date(userData.timestamp),
+            roomId: userData.roomId
+        });
+    } catch (error) {
+        console.error('Error logging acknowledgment:', error);
+        throw error;
+    }
+}
+
+
+
 const config = {
   token: process.env.BOTTOKEN,
 };
