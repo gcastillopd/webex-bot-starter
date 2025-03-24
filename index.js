@@ -4,69 +4,83 @@ var framework = require("webex-node-bot-framework");
 var webhook = require("webex-node-bot-framework/webhook");
 var express = require("express");
 var bodyParser = require("body-parser");
+const fetch = require('node-fetch');
 var app = express();
 app.use(bodyParser.json());
 app.use(express.static("images"));
 
-
-// Handler for card submissions
-framework.on('attachmentAction', async (bot, trigger) => {
-    try {
-        // Get the submitted data
-        const inputs = trigger.attachmentAction.inputs;
-        
-        // Check if this is an acknowledge action
-        if (inputs.action === 'acknowledge') {
-            // Get user information
-            const personId = trigger.attachmentAction.personId;
-            const roomId = trigger.attachmentAction.roomId;
-            
-            // Get detailed user information
-            const userInfo = await bot.webex.people.get(personId);
-            
-            // Create user data object
-            const userData = {
-                id: personId,
-                email: userInfo.emails[0],
-                name: userInfo.displayName,
-                timestamp: inputs.timestamp,
-                roomId: roomId
-            };
-            
-            // Log the acknowledgment
-            await logAcknowledgment(userData);
-            
-            // Send confirmation
-            await bot.say(`Acknowledgment received from ${userData.name} at ${userData.timestamp}`);
-        }
-        
-    } catch (error) {
-        console.error('Error processing acknowledgment:', error);
-        bot.say('Sorry, there was an error processing your acknowledgment.');
-    }
-});
-
-async function logAcknowledgment(userData) {
-    // Example logging to database (using MongoDB)
-    try {
-        await db.collection('acknowledgments').insertOne({
-            userId: userData.id,
-            userName: userData.name,
-            userEmail: userData.email,
-            timestamp: new Date(userData.timestamp),
-            roomId: userData.roomId
-        });
-    } catch (error) {
-        console.error('Error logging acknowledgment:', error);
-        throw error;
-    }
-}
-
-
-
 const config = {
   token: process.env.BOTTOKEN,
+  pdApiKey: process.env.PAGERDUTY_API_KEY
 };
+
+if (!config.pdApiKey) {
+  console.error('WARNING: PAGERDUTY_API_KEY is not set in environment variables');
+}
+
+console.log('Environment check:');
+console.log('BOTTOKEN:', process.env.BOTTOKEN ? 'Present' : 'Missing');
+console.log('PAGERDUTY_API_KEY:', process.env.PAGERDUTY_API_KEY ? 'Present' : 'Missing');
+
+// Handler for card submissions
+async function addNoteToPagerDuty(incidentId, noteContent, pdApiKey) {
+  if (!pdApiKey) {
+      console.error('PagerDuty API key is missing');
+      return {
+          success: false,
+          message: 'PagerDuty API key is not configured'
+      };
+  }
+
+  const url = `https://api.pagerduty.com/incidents/${incidentId}/notes`;
+  
+  console.log(`Making request to: ${url}`);
+  
+  const headers = {
+      'Accept': 'application/vnd.pagerduty+json;version=2',
+      'Authorization': `Token token=${pdApiKey}`,
+      'Content-Type': 'application/json',
+      'From': 'gcastillo@pagerduty.com'
+  };
+
+  const payload = {
+      note: {
+          content: noteContent
+      }
+  };
+
+  console.log('Request payload:', JSON.stringify(payload, null, 2));
+
+  try {
+      const response = await fetch(url, {
+          method: 'POST',
+          headers: headers,
+          body: JSON.stringify(payload)
+      });
+
+      console.log('Response status:', response.status);
+      const responseText = await response.text();
+      console.log('Response body:', responseText);
+
+      if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}, body: ${responseText}`);
+      }
+
+      const data = JSON.parse(responseText);
+      return {
+          success: true,
+          message: 'Note added successfully',
+          data: data
+      };
+  } catch (error) {
+      console.error('Error in addNoteToPagerDuty:', error);
+      return {
+          success: false,
+          message: `Failed to add note: ${error.message}`
+      };
+  }
+}
+
 
 // Only pass the webhook URL and port if it has been set in the environment
 if (process.env.WEBHOOKURL && process.env.PORT) {
@@ -74,29 +88,66 @@ if (process.env.WEBHOOKURL && process.env.PORT) {
   config.port = process.env.PORT;
 }
 
-
 // init framework
-var framework = new framework(config);
-framework.start();
+var bot = new framework(config);
+bot.start();
 console.log("Starting framework, please wait...");
 
-framework.on("initialized", () => {
+// Add attachment action handler
+bot.on('attachmentAction', async (bot, trigger) => {
+  console.log('Card submission received:', JSON.stringify(trigger.attachmentAction, null, 2));
+
+  try {
+      const inputs = trigger.attachmentAction.inputs;
+      console.log('Inputs:', JSON.stringify(inputs, null, 2));
+
+      // Simple check for required fields
+      if (!inputs || !inputs.noteContent || !inputs.incidentId) {
+          console.log('Missing required fields:', inputs);
+          await bot.say('Missing required information in the submission.');
+          return;
+      }
+
+      // Log the values we're about to use
+      console.log('Using values:', {
+          incidentId: inputs.incidentId,
+          noteContent: inputs.noteContent,
+          hasApiKey: !!process.env.PAGERDUTY_API_KEY
+      });
+
+      // Call PagerDuty API
+      const result = await addNoteToPagerDuty(
+          inputs.incidentId,
+          inputs.noteContent,
+          process.env.PAGERDUTY_API_KEY
+      );
+
+      // Log the result
+      console.log('PagerDuty API result:', result);
+
+      // Send response to user
+      if (result.success) {
+          await bot.say('Note added successfully to PagerDuty!');
+      } else {
+          await bot.say(`Failed to add note: ${result.message}`);
+      }
+
+  } catch (error) {
+      console.error('Error in attachment action handler:', error);
+      await bot.say('Sorry, there was an error processing your note submission.');
+  }
+});
+
+bot.on("initialized", () => {
   console.log("framework is all fired up! [Press CTRL-C to quit]");
 });
 
-// A spawn event is generated when the framework finds a space with your bot in it
-// If actorId is set, it means that user has just added your bot to a new space
-// If not, the framework has discovered your bot in an existing space
-framework.on("spawn", (bot, id, actorId) => {
+bot.on("spawn", (bot, id, actorId) => {
   if (!actorId) {
-    // don't say anything here or your bot's spaces will get
-    // spammed every time your server is restarted
     console.log(
       `While starting up, the framework found our bot in a space called: ${bot.room.title}`
     );
   } else {
-    // When actorId is present it means someone added your bot got added to a new space
-    // Lets find out more about them..
     var msg =
       "You can say `help` to get the list of words I am able to respond to.";
     bot.webex.people
@@ -111,7 +162,6 @@ framework.on("spawn", (bot, id, actorId) => {
         msg = `Hello there. ${msg}`;
       })
       .finally(() => {
-        // Say hello, and tell users what you do!
         if (bot.isDirect) {
           bot.say("markdown", msg);
         } else {
@@ -123,34 +173,17 @@ framework.on("spawn", (bot, id, actorId) => {
   }
 });
 
-// Implementing a framework.on('log') handler allows you to capture
-// events emitted from the framework.  Its a handy way to better understand
-// what the framework is doing when first getting started, and a great
-// way to troubleshoot issues.
-// You may wish to disable this for production apps
-framework.on("log", (msg) => {
+bot.on("log", (msg) => {
   console.log(msg);
 });
 
-// Process incoming messages
-// Each hears() call includes the phrase to match, and the function to call if webex mesages
-// to the bot match that phrase.
-// An optional 3rd parameter can be a help string used by the frameworks.showHelp message.
-// An optional fourth (or 3rd param if no help message is supplied) is an integer that
-// specifies priority.   If multiple handlers match they will all be called unless the priority
-// was specified, in which case, only the handler(s) with the lowest priority will be called
-
-/* On mention with command
-ex User enters @botname framework, the bot will write back in markdown
-*/
-
-framework.hears("hola", (bot, trigger) => {
+bot.hears("hola", (bot, trigger) => {
   console.log("hola command received");
   let personName = trigger.person.displayName;
   bot.say(`Hola ${personName}.`);
 });
 
-framework.hears(
+bot.hears(
   "framework",
   (bot) => {
     console.log("framework command received");
@@ -163,14 +196,10 @@ framework.hears(
   0
 );
 
-/* On mention with command, using other trigger data, can use lite markdown formatting
-ex User enters @botname 'info' phrase, the bot will provide personal details
-*/
-framework.hears(
+bot.hears(
   "info",
   (bot, trigger) => {
     console.log("info command received");
-    //the "trigger" parameter gives you access to data about the user who entered the command
     let personAvatar = trigger.person.avatar;
     let personEmail = trigger.person.emails[0];
     let personDisplayName = trigger.person.displayName;
@@ -181,10 +210,7 @@ framework.hears(
   0
 );
 
-/* On mention with bot data
-ex User enters @botname 'space' phrase, the bot will provide details about that particular space
-*/
-framework.hears(
+bot.hears(
   "space",
   (bot) => {
     console.log("space. the final frontier");
@@ -203,22 +229,15 @@ framework.hears(
   0
 );
 
-/*
-   Say hi to every member in the space
-   This demonstrates how developers can access the webex
-   sdk to call any Webex API.  API Doc: https://webex.github.io/webex-js-sdk/api/
-*/
-framework.hears(
+bot.hears(
   "say hi to everyone",
   (bot) => {
     console.log("say hi to everyone.  Its a party");
-    // Use the webex SDK to get the list of users in this space
     bot.webex.memberships
       .list({ roomId: bot.room.id })
       .then((memberships) => {
         for (const member of memberships.items) {
           if (member.personId === bot.person.id) {
-            // Skip myself!
             continue;
           }
           let displayName = member.personDisplayName
@@ -236,72 +255,7 @@ framework.hears(
   0
 );
 
-// Buttons & Cards data
-let cardJSON = {
-  $schema: "http://adaptivecards.io/schemas/adaptive-card.json",
-  type: "AdaptiveCard",
-  version: "1.0",
-  body: [
-    {
-      type: "ColumnSet",
-      columns: [
-        {
-          type: "Column",
-          width: "5",
-          items: [
-            {
-              type: "Image",
-              url: "Your avatar appears here!",
-              size: "large",
-              horizontalAlignment: "Center",
-              style: "person",
-            },
-            {
-              type: "TextBlock",
-              text: "Your name will be here!",
-              size: "medium",
-              horizontalAlignment: "Center",
-              weight: "Bolder",
-            },
-            {
-              type: "TextBlock",
-              text: "And your email goes here!",
-              size: "small",
-              horizontalAlignment: "Center",
-              isSubtle: true,
-              wrap: false,
-            },
-          ],
-        },
-      ],
-    },
-  ],
-};
-
-/* On mention with card example
-ex User enters @botname 'card me' phrase, the bot will produce a personalized card - https://developer.webex.com/docs/api/guides/cards
-*/
-/*framework.hears(
-  "card me",
-  (bot, trigger) => {
-    console.log("someone asked for a card");
-    let avatar = trigger.person.avatar;
-
-    cardJSON.body[0].columns[0].items[0].url = avatar
-      ? avatar
-      : `${config.webhookUrl}/missing-avatar.jpg`;
-    cardJSON.body[0].columns[0].items[1].text = trigger.person.displayName;
-    cardJSON.body[0].columns[0].items[2].text = trigger.person.emails[0];
-    bot.sendCard(
-      cardJSON,
-      "This is customizable fallback text for clients that do not support buttons & cards"
-    );
-  },
-  "**card me**: (a cool card!)",
-  0
-);*/
-
- framework.hears('card please', (bot, trigger) => {
+bot.hears('card please', (bot, trigger) => {
  bot.sendCard(
   {
     "type": "AdaptiveCard",
@@ -534,7 +488,11 @@ ex User enters @botname 'card me' phrase, the bot will produce a personalized ca
                     "actions": [
                         {
                             "type": "Action.Submit",
-                            "title": "Submit"
+                            "title": "Submit",
+                            "data": {
+                                "id": "000001",
+                                "type": "note_submission"
+                            }
                         },
                         {
                             "type": "Action.OpenUrl",
@@ -552,10 +510,7 @@ ex User enters @botname 'card me' phrase, the bot will produce a personalized ca
    "This is the fallback text if the client can't render this card");
  }, '**card please** - ask the bot to post a card to the space');
 
-/* On mention reply example
-ex User enters @botname 'reply' phrase, the bot will post a threaded reply
-*/
-framework.hears(
+bot.hears(
   "reply",
   (bot, trigger) => {
     console.log("someone asked for a reply.  We will give them two.");
@@ -574,40 +529,26 @@ framework.hears(
   0
 );
 
-/* On mention with command
-ex User enters @botname help, the bot will write back in markdown
- *
- * The framework.showHelp method will use the help phrases supplied with the previous
- * framework.hears() commands
-*/
-framework.hears(
+bot.hears(
   /help|what can i (do|say)|what (can|do) you do/i,
   (bot, trigger) => {
     console.log(`someone needs help! They asked ${trigger.text}`);
     bot
       .say(`Hello ${trigger.person.displayName}.`)
-      //    .then(() => sendHelp(bot))
-      .then(() => bot.say("markdown", framework.showHelp()))
+      .then(() => bot.say("markdown", bot.showHelp()))
       .catch((e) => console.error(`Problem in help hander: ${e.message}`));
   },
   "**help**: (what you are reading now)",
   0
 );
 
-/* On mention with unexpected bot command
-   Its a good practice is to gracefully handle unexpected input
-   Setting the priority to a higher number here ensures that other
-   handlers with lower priority will be called instead if there is another match
-*/
-framework.hears(
+bot.hears(
   /.*/,
   (bot, trigger) => {
-    // This will fire for any input so only respond if we haven't already
     console.log(`catch-all handler fired for user input: ${trigger.text}`);
     bot
       .say(`Sorry, I don't know how to respond to "${trigger.text}"`)
-      .then(() => bot.say("markdown", framework.showHelp()))
-      //    .then(() => sendHelp(bot))
+      .then(() => bot.say("markdown", bot.showHelp()))
       .catch((e) =>
         console.error(`Problem in the unexepected command hander: ${e.message}`)
       );
@@ -616,22 +557,20 @@ framework.hears(
 );
 
 //Server config & housekeeping
-// Health Check
 app.get("/", (req, res) => {
   res.send(`I'm alive.`);
 });
 
-app.post("/", webhook(framework));
+app.post("/", webhook(bot));
 
 var server = app.listen(config.port, () => {
-  framework.debug("framework listening on port %s", config.port);
+  console.log("framework listening on port %s", config.port);
 });
 
-// gracefully shutdown (ctrl-c)
 process.on("SIGINT", () => {
-  framework.debug("stopping...");
+  console.log("stopping...");
   server.close();
-  framework.stop().then(() => {
+  bot.stop().then(() => {
     process.exit();
   });
 });
